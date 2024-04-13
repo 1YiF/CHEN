@@ -1,0 +1,161 @@
+
+import os
+import pandas as pd
+
+def read_files(path):
+    files = os.listdir(path)
+    return files
+
+dir_1 = '路径'
+
+total_UB = 0
+dir = read_files(dir_1)  # 读取数据集文件夹下的所有子文件夹
+# print(dir)  # 二级文件夹名
+for dir_2 in dir:
+    # 依次读取dir1/dir2下的所有文件
+    dir_2 = os.path.join(dir_1, dir_2)
+    # print(dir_2)  # 二级文件夹路径
+    files = read_files(dir_2)
+    # print(files)  # 二级文件夹下的所有文件名
+    for file in files:
+        # 依次读取dir2/file（txt文件）
+        file = os.path.join(dir_2, file)
+        print(file)  # txt文件路径
+        # 读取txt文件的第一行
+        data_shape = pd.read_csv(file, sep=' ', header=None, nrows=1)
+        # 读取数据到list
+        data_list = []
+        for i in range(data_shape[0][0]):
+            data = pd.read_csv(file, sep=' ', header=None, skiprows=i+1, nrows=1)
+            data = data[data.notnull()].astype('Int64')
+            data_list.append(data.iloc[0, :].dropna().tolist())
+        # 限高
+        highest = -1
+        for i in range(len(data_list)):
+            highest = max(highest, len(data_list[i]))
+            del data_list[i][0]
+        highest = highest - 1
+        print(data_list)  # 数据list
+
+        UB = 0  # 翻箱数
+
+        # 总箱子数
+        max_value = -1
+        for i in range(len(data_list)): 
+            if data_list[i] != []:
+                max_value = max(max_value, max(data_list[i]))
+
+        for i in range(1, max_value+1):  # 遍历目标箱
+
+            free_stack = 0  # 标记是否存在空堆
+            free_stack_id = []  # 空堆序号
+
+            # 如果存在空堆，记录空堆序号并标记
+            for id, stack in enumerate(data_list):
+                if stack == []:
+                    free_stack += 1
+                    free_stack_id.append(id)
+            
+            while free_stack:  # 如果存在空堆
+                stack_lighten = -1  # 移动到空堆的箱子
+                stack_lighten_id = -1  # 非空堆中最后一个箱子优先级最低的堆序号
+
+                # 找到所有非空堆的最后一个箱子序号
+                last_box = {}
+
+                for id, stack in enumerate(data_list):
+                    if stack == [] or len(stack) == 1: continue
+                    last_box[id] = stack[-1]
+
+                last_box = sorted(last_box.items(), key=lambda x: x[1], reverse=True)
+
+                for id, box in last_box:
+                    if box != min(data_list[id]):  # 如果不是堆中优先级最高的，就移动到空堆
+                        stack_lighten = box
+                        stack_lighten_id = id
+                        break
+                
+                if stack_lighten == -1: break
+                else: 
+                    data_list[stack_lighten_id].remove(stack_lighten)
+                    data_list[free_stack_id[0]].append(stack_lighten)
+                    free_stack -= 1
+                    free_stack_id.remove(free_stack_id[0])
+                    UB += 1
+                    #print('利用空堆-方式1')
+                    #print(data_list)
+
+            for stack_target, data in enumerate(data_list):  # 找到目标箱位置和预移箱
+                if i in data:
+                    stack_premoved = (data[data.index(i)+1:])  # 预移箱
+                    stack_premoved = stack_premoved[::-1]
+                    break
+            
+            if stack_premoved != []:
+
+                for box_moved in stack_premoved:  # 遍历预移箱
+
+                    free_stack = 0  # 标记是否存在空堆
+                    free_stack_id = []  # 空堆序号
+
+                    # 如果存在空堆，记录空堆序号并标记
+                    for id, stack in enumerate(data_list):
+                        if stack == []:
+                            free_stack += 1
+                            free_stack_id.append(id)
+                
+                    # 步骤一
+                    stack_free = []  # 可用堆
+                    for stack in range(len(data_list)):  # 找到可用堆
+                        if stack == stack_target: continue
+                        if len(data_list[stack]) < highest:
+                            stack_free.append(stack)
+
+                    if free_stack:  # 如果存在空堆
+                        data_list[free_stack_id[0]].append(box_moved)
+                        data_list[stack_target].remove(box_moved)
+                        free_stack -= 1
+                        free_stack_id.remove(free_stack_id[0])
+                        UB += 1
+                        #print('利用空堆-方式2')
+                        #print(data_list)
+                        if box_moved == stack_premoved[-1]: break
+                        else: continue
+
+                    move_target = None  # 移动目标堆
+
+                    # 各堆优先级最高的箱子序号
+                    stack_priority = {}
+                    # 各堆优先级序号最高的箱子是倒数第几个
+                    stack_priority_index = {}
+                    # 各低优先级堆的最高优先级箱子序号
+                    stack_priority_low_max = {}
+
+                    for stack in stack_free:  # 遍历可用堆
+                        stack_priority[stack] = min(data_list[stack])  # 各堆优先级最高的箱子序号
+                        stack_priority_index[stack] = len(data_list[stack]) - data_list[stack].index(stack_priority[stack])  # 各堆优先级序号最高的箱子是倒数第几个        
+                        # 如果有堆中所有箱子都比要移动的箱子优先级低，选择这些堆中：最高优先级的堆
+                        if stack_priority[stack] > box_moved:
+                            stack_priority_low_max[stack] = stack_priority[stack]
+
+                    if stack_priority_low_max != {}:
+                        move_target = min(stack_priority_low_max, key=stack_priority_low_max.get)
+                    else:
+                        number = min(stack_priority_index.values())  # 最高箱子上方至少有几个箱子（-1）
+                        stack_priority_index = {k: v for k, v in stack_priority_index.items() if v == number}
+                        # 计算绝对值
+                        stack_priority_diff = {}
+                        for stack in stack_priority_index:
+                            stack_priority_diff[stack] = abs(stack_priority[stack] - box_moved)
+                        move_target = min(stack_priority_diff, key=stack_priority_diff.get)
+
+                    data_list[move_target].append(box_moved)
+                    data_list[stack_target].remove(box_moved)
+                    UB += 1
+            
+            data_list[stack_target].remove(i)
+            #print('i=', i)
+            #print(data_list)
+        print('UB=', UB)
+        total_UB += UB
+        print('Total UB:', total_UB)
