@@ -1,0 +1,358 @@
+
+import os
+import pandas as pd
+from copy import deepcopy
+#import profile
+import time
+start_time = time.time()
+
+b = X
+
+def cal_LB(data_list, highest):
+    # 计算LB
+    LB = 0
+    data_list_copy = data_list.copy()
+    #data_list_copy中各元素中最大的值
+    max_value = -1
+    for i in range(len(data_list)): 
+        if data_list[i] != []:
+            max_value = max(max_value, max(data_list[i]))
+    
+    for i in range(1, max_value+1):
+        for j in range(len(data_list_copy)):
+            if i in data_list_copy[j]:
+                # 计算i之后的元素个数
+                stack = len(data_list_copy[j])
+                index = data_list_copy[j].index(i)
+                # print('stack:', stack)  # 堆内元素个数
+                # print('index:', index)  # i的索引
+                if index == stack - 1:
+                    data_list_copy[j].pop()
+                else:
+                    LB += stack - index - 1
+                    # print('+')  # 测试用
+                    # 把i之后的元素放入box
+                    box = data_list_copy[j][index+1:]
+                    # print('box:', box)  # 测试用
+                    # 找有没有LB1+
+                    for k in box:
+                        LB_plus = True
+                        for ii in range(len(data_list_copy)):                               
+                            if (len(data_list_copy[ii]) < highest) and (k not in data_list_copy[ii]):
+                                if all(data_list_copy[ii][m] > k for m in range(len(data_list_copy[ii]))):
+                                    LB_plus = False
+                                    break
+                        if LB_plus:
+                            LB += 1 
+                    # 删除i及i之后的元素
+                    del data_list_copy[j][index:]
+    return LB
+
+def cal_UB(data_list, highest):
+    LB = 0  # 翻箱数
+
+    # 总箱子数
+    max_value = -1
+    for i in range(len(data_list)): 
+        if data_list[i] != []:
+            max_value = max(max_value, max(data_list[i]))
+
+    min_value = max_value
+    for i in range(len(data_list)):
+        if data_list[i] != []:
+            min_value = min(min_value, min(data_list[i]))
+
+    for i in range(min_value, max_value+1):  # 遍历目标箱
+
+        free_stack = 0  # 标记是否存在空堆
+        free_stack_id = []  # 空堆序号
+
+        # 如果存在空堆，记录空堆序号并标记
+        for id, stack in enumerate(data_list):
+            if stack == []:
+                free_stack += 1
+                free_stack_id.append(id)
+        
+        while free_stack:  # 如果存在空堆
+            stack_lighten = -1  # 移动到空堆的箱子
+            stack_lighten_id = -1  # 非空堆中最后一个箱子优先级最低的堆序号
+
+            # 找到所有非空堆的最后一个箱子序号
+            last_box = {}
+
+            for id, stack in enumerate(data_list):
+                if stack == [] or len(stack) == 1: continue
+                last_box[id] = stack[-1]
+
+            last_box = sorted(last_box.items(), key=lambda x: x[1], reverse=True)
+
+            for id, box in last_box:
+                if box != min(data_list[id]):  # 如果不是堆中优先级最高的，就移动到空堆
+                    stack_lighten = box
+                    stack_lighten_id = id
+                    break
+            
+            if stack_lighten == -1: break
+            else: 
+                data_list[stack_lighten_id].remove(stack_lighten)
+                data_list[free_stack_id[0]].append(stack_lighten)
+                free_stack -= 1
+                free_stack_id.remove(free_stack_id[0])
+                LB += 1
+                # print('利用空堆-方式1')
+                # print(data_list)
+
+        for stack_target, data in enumerate(data_list):  # 找到目标箱位置和预移箱
+            if i in data:
+                stack_premoved = (data[data.index(i)+1:])  # 预移箱
+                stack_premoved = stack_premoved[::-1]
+                break
+        
+        if stack_premoved != []:
+
+            for box_moved in stack_premoved:  # 遍历预移箱
+
+                free_stack = 0  # 标记是否存在空堆
+                free_stack_id = []  # 空堆序号
+
+                # 如果存在空堆，记录空堆序号并标记
+                for id, stack in enumerate(data_list):
+                    if stack == []:
+                        free_stack += 1
+                        free_stack_id.append(id)
+            
+                # 步骤一
+                stack_free = []  # 可用堆
+                for stack in range(len(data_list)):  # 找到可用堆
+                    if stack == stack_target: continue
+                    if len(data_list[stack]) < highest:
+                        stack_free.append(stack)
+
+                if free_stack:  # 如果存在空堆
+                    data_list[free_stack_id[0]].append(box_moved)
+                    data_list[stack_target].remove(box_moved)
+                    free_stack -= 1
+                    free_stack_id.remove(free_stack_id[0])
+                    LB += 1
+                    # print('利用空堆-方式2')
+                    # print(data_list)
+                    if box_moved == stack_premoved[-1]: break
+                    else: continue
+
+                move_target = None  # 移动目标堆
+
+                # 各堆优先级最高的箱子序号
+                stack_priority = {}
+                # 各堆优先级序号最高的箱子是倒数第几个
+                stack_priority_index = {}
+                # 各低优先级堆的最高优先级箱子序号
+                stack_priority_low_max = {}
+
+                for stack in stack_free:  # 遍历可用堆
+                    stack_priority[stack] = min(data_list[stack])  # 各堆优先级最高的箱子序号
+                    stack_priority_index[stack] = len(data_list[stack]) - data_list[stack].index(stack_priority[stack])  # 各堆优先级序号最高的箱子是倒数第几个        
+                    # 如果有堆中所有箱子都比要移动的箱子优先级低，选择这些堆中：最高优先级的堆
+                    if stack_priority[stack] > box_moved:
+                        stack_priority_low_max[stack] = stack_priority[stack]
+
+                if stack_priority_low_max != {}:
+                    move_target = min(stack_priority_low_max, key=stack_priority_low_max.get)
+                else:
+                    number = min(stack_priority_index.values())  # 最高箱子上方至少有几个箱子（-1）
+                    stack_priority_index = {k: v for k, v in stack_priority_index.items() if v == number}
+                    # 计算绝对值
+                    stack_priority_diff = {}
+                    for stack in stack_priority_index:
+                        stack_priority_diff[stack] = abs(stack_priority[stack] - box_moved)
+                    move_target = min(stack_priority_diff, key=stack_priority_diff.get)
+
+                data_list[move_target].append(box_moved)
+                data_list[stack_target].remove(box_moved)
+                LB += 1
+        
+        data_list[stack_target].remove(i)
+    return LB
+
+def branch(data_list, highest):
+    """
+    找到所有分支
+    """
+
+    
+    non_empty_lists = [lst for lst in data_list if lst]
+    
+    # 检查是否存在非空列表
+    if not non_empty_lists:
+        return []
+    
+    min_num = min(min(lst) for lst in non_empty_lists)
+
+    flag = True
+    
+    while flag:
+        for stack_target, data in enumerate(data_list):  # 找到目标箱位置和预移箱
+
+            if min_num in data:
+                if min_num == data[-1]:
+                    data_list[stack_target].remove(min_num)
+                    min_num += 1
+                    break
+                stack_premoved = (data[data.index(min_num)+1:])  # 预移箱
+                stack_premoved = stack_premoved[-1]
+                flag = False
+                break
+
+            if stack_target == len(data_list)-1:
+                return []
+
+    stack_free = []  # 可用堆
+    for stack in range(len(data_list)):  # 找到可用堆
+        if stack == stack_target: continue
+        if len(data_list[stack]) < highest:
+            stack_free.append(stack)
+    
+    output = []
+    for stack in stack_free:
+        data_list_new = deepcopy(data_list)
+        data_list_new[stack].append(stack_premoved)
+        data_list_new[stack_target].remove(stack_premoved)
+        output.append(data_list_new)
+
+    return output
+
+def count(layer, highest, currbest):
+    min_UB = 100000
+    updated_layer = []
+    Score_list = []
+    for i in range(len(layer)):
+        if layer[i] != []:
+            LB = cal_LB(deepcopy(layer[i]), highest)
+            UB = cal_UB(deepcopy(layer[i]), highest)
+        
+            #LB = cal_LB(curr, highest)
+            #UB = cal_UB(curr, highest)
+            min_UB = min(min_UB, UB)
+            if LB == UB:
+                if UB < currbest:
+                    currbest = UB
+                    #updated_layer.append(curr)
+                continue
+            score_dict = {'num':i,'score':UB+LB,'LB':LB}
+            Score_list.append(score_dict)
+            # if LB < min_UB:
+            #     updated_layer.append(curr)
+    #Score_list.sort(key='score')
+    if len(Score_list) > 0:
+        sorted_list = sorted(Score_list, key = lambda i: i['score'])
+        if b > len(sorted_list):
+            rangeNum = len(sorted_list)
+        else:
+            rangeNum = b
+        for i in range(rangeNum):
+            if sorted_list[i]['LB'] < min_UB:
+                updated_layer.append(layer[sorted_list[i]['num']])
+
+    return updated_layer, currbest
+
+        
+def read_files(path):
+    files = os.listdir(path)
+    return files
+
+def Compute():
+    dir_1 = '路径'
+    total_sum = 0
+    dir = read_files(dir_1)  # 读取数据集文件夹下的所有子文件夹
+    # print(dir)  # 二级文件夹名
+    for dir_2 in dir:
+        # 依次读取dir1/dir2下的所有文件
+        dir_2 = os.path.join(dir_1, dir_2)
+
+
+        if dir_2 == '路径':
+            #print('pass')
+            pass
+        else:
+            continue
+
+        #print(dir_2)  # 二级文件夹路径
+
+
+        files = read_files(dir_2)
+        # print(files)  # 二级文件夹下的所有文件名
+        for file in files:
+            # 依次读取dir2/file（txt文件）
+            file = os.path.join(dir_2, file)
+
+
+            #if file == '路径':
+                #print('pass')
+            # #     pass
+            #else: 
+            #     # print('continue')
+                #continue
+
+            print(file)  # txt文件路径
+
+
+            # 读取txt文件的第一行
+            data_shape = pd.read_csv(file, sep=' ', header=None, nrows=1)
+            #读取数据到list
+            data_list = []
+            for i in range(data_shape[0][0]):
+                data = pd.read_csv(file, sep=' ', header=None, skiprows=i+1, nrows=1)
+                data = data[data.notnull()].astype('Int64')
+                data_list.append(data.iloc[0, :].dropna().tolist())
+            #data_list = [[11], [3, 15, 8], [1, 13, 9], [6, 10, 2], [14, 4], [12, 5, 7]]
+            #data_list = [[3,2,1],[4]]
+            # 限高
+            highest = -1
+            for i in range(len(data_list)):
+                highest = max(highest, len(data_list[i]))
+                del data_list[i][0]
+            highest = highest - 1
+            print(data_list)  # 数据list
+            start_time = time.time()
+            currbest = 999
+
+            last_layer = []
+            last_layer.append(deepcopy(data_list))
+            #last_layer.append(deepcopy(data_list))
+            count1 = 0
+            while True:
+                if last_layer == []:
+                    break
+                else:
+                    current_layer = []
+                    for data_list in last_layer:
+                        current_layer = current_layer + branch(deepcopy(data_list), highest)
+                        #current_layer = current_layer + branch(deepcopy(data_list), highest)
+                                
+                    current_layer, currbest = count(current_layer, highest, currbest)
+                    #print(current_layer)
+                    #print('\n')
+                    last_layer = deepcopy(current_layer)
+                
+                    # print(last_layer)
+                    #print(currbest)
+                    count1 += 1
+            total_sum += currbest + count1
+            end_time = time.time()
+            if currbest == 999:
+                currbest = 0
+                count1 = 0
+            # 计算运行时间（毫秒）
+            run_time = (end_time - start_time) * 1000
+
+            print(f'currbest: {currbest} ')
+            print(f'分支代数: {count1} ')
+            print(f'总翻箱数：{currbest+count1}')
+            # 打印运行时间
+            print("程序运行时间：", run_time, "毫秒")
+            print("总和: ", total_sum)
+    #print("总和: ", total_sum)
+
+Compute()
+end_time = time.time()
+execution_time = end_time - start_time
+print("程序运行时间为：", execution_time, "秒")
